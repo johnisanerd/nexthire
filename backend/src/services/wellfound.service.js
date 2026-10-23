@@ -1,5 +1,10 @@
 const { ApifyClient } = require('apify-client');
 const JobCache = require('../models/jobCache.model');
+const {
+  WELLFOUND_ACTOR_ID,
+  wellfoundRunInput,
+  mapWellfoundItems,
+} = require('./wellfound.adapter');
 
 const client = new ApifyClient({
   token: process.env.APIFY_API_TOKEN,
@@ -23,29 +28,10 @@ const scrapeWellfound = async (role) => {
   console.log(`Wellfound cache miss — calling Apify for: ${query}`);
 
   try {
-    const run = await client.actor('crawlerbros/wellfound-scraper').call({
-      startUrls: [{ url: 'https://wellfound.com/jobs' }],
-      keyword: role,
-      maxResults: 35,
-    });
+    const run = await client.actor(WELLFOUND_ACTOR_ID).call(wellfoundRunInput(role));
 
     const { items } = await client.dataset(run.defaultDatasetId).listItems();
-
-    const jobs = items.map(item => ({
-      id: `wellfound_${item.id || Math.random().toString(36).substr(2, 9)}`,
-      title: item.title || item.jobTitle || 'Job Opening',
-      company: item.company || item.companyName || 'Startup',
-      location: item.location || item.jobLocation || 'Remote',
-      description: item.description || item.jobDescription ||
-        `${item.title} opportunity at ${item.company}. ${item.compensation || ''}`,
-      applyUrl: item.url || item.jobUrl || 'https://wellfound.com/jobs',
-      stipend: item.compensation || item.salary || '',
-      postedAt: item.postedAt || '',
-      isRemote: item.remote || item.isRemote || false,
-      employmentType: item.jobType || 'Full-time',
-      source: 'Wellfound',
-      companyLogo: item.companyLogo || null
-    }));
+    const jobs = mapWellfoundItems(items);
 
     // Save to cache
     await JobCache.findOneAndUpdate(
